@@ -106,8 +106,8 @@
             <h2>Farm Setup</h2>
             <input type="text" id="farmName" placeholder="Farm Name" required>
             <input type="text" id="farmerName" placeholder="Farmer Name" required>
-            <input type="number" id="farmSize" placeholder="Farm Size (in acres)" required>
-            <input type="number" id="contractRate" placeholder="Initial Contract Rate (per acre)" required>
+            <input type="number" id="farmSize" placeholder="Farm Size (in kanals)" required>
+            <input type="number" id="contractRate" placeholder="Contract Rate (per acre)" required>
             <button id="setupButton">Set Up Farm</button>
         </div>
 
@@ -124,9 +124,15 @@
             </div>
             
             <div class="section">
+                <h2>Add More Land</h2>
+                <input type="number" id="additionalLand" placeholder="Additional Land (in kanals)">
+                <button id="addLandButton">Add Land</button>
+            </div>
+
+            <div class="section">
                 <h2>Update Contract for Next Year</h2>
                 <input type="number" id="newContractRate" placeholder="New Contract Rate (per acre)">
-                <button id="updateContract">Update Contract</button>
+                <button id="updateContractButton">Update Contract</button>
             </div>
 
             <div class="section">
@@ -151,7 +157,7 @@
                 <canvas id="trendChart"></canvas>
             </div>
 
-            <button id="resetData">Reset All Data</button>
+            <button id="resetButton">Reset All Data</button>
         </div>
 
         <div id="debugConsole" class="hidden">
@@ -257,18 +263,20 @@
         },
         updateFarmOverview(data) {
             const overview = document.getElementById('farmOverview');
+            const acres = data.farmSize / 8;
             overview.innerHTML = `
                 <p>Farmer: ${data.farmerName}</p>
-                <p>Size: ${data.farmSize} acres (${data.farmSize * 8} kanal)</p>
+                <p>Size: ${data.farmSize} kanals (${acres.toFixed(2)} acres)</p>
                 <p>Current Year: ${data.currentYear}</p>
                 <p>Contract Rate: ₹${data.contractRate}/acre</p>
             `;
         },
         updateFinancialSummary(data) {
             const summary = document.getElementById('financialSummary');
+            const annualAmount = data.contractRate * data.farmSize / 8;
             summary.innerHTML = `
-                <p>Annual Amount: ₹${(data.farmSize * data.contractRate).toFixed(2)}</p>
-                <p>Half-yearly Payment: ₹${(data.farmSize * data.contractRate / 2).toFixed(2)}</p>
+                <p>Annual Amount: ₹${annualAmount.toFixed(2)}</p>
+                <p>Half-yearly Payment: ₹${(annualAmount / 2).toFixed(2)}</p>
                 <p>Total Revenue to Date: ₹${data.totalRevenue.toFixed(2)}</p>
             `;
         },
@@ -353,8 +361,9 @@
         },
         attachEventListeners() {
             document.getElementById('setupButton').addEventListener('click', () => this.setupFarm());
-            document.getElementById('updateContract').addEventListener('click', () => this.updateContract());
-            document.getElementById('resetData').addEventListener('click', () => this.resetAllData());
+            document.getElementById('addLandButton').addEventListener('click', () => this.addLand());
+            document.getElementById('updateContractButton').addEventListener('click', () => this.updateContract());
+            document.getElementById('resetButton').addEventListener('click', () => this.resetAllData());
         },
         async setupFarm() {
             try {
@@ -366,7 +375,7 @@
                     currentYear: new Date().getFullYear()
                 };
                 await DB.setFarmData(farmData);
-                await this.addPaymentRecord(farmData.currentYear, farmData.contractRate, farmData.farmSize);
+                await this.addPaymentRecord(farmData);
                 UI.updateFarmName(farmData.farmName);
                 UI.showMainApp();
                 this.updateDisplay();
@@ -375,6 +384,25 @@
             } catch (error) {
                 Toast.show('Failed to set up farm: ' + error, 'error');
                 Debug.log('Farm setup error: ' + error);
+            }
+        },
+        async addLand() {
+            try {
+                const additionalLand = parseFloat(document.getElementById('additionalLand').value);
+                if (isNaN(additionalLand) || additionalLand <= 0) {
+                    throw new Error('Please enter a valid land size');
+                }
+                const farmData = await DB.getFarmData();
+                farmData.farmSize += additionalLand;
+                await DB.setFarmData(farmData);
+                UI.updateFarmOverview(farmData);
+                UI.updateFinancialSummary(farmData);
+                document.getElementById('additionalLand').value = '';
+                Toast.show('Additional land added successfully');
+                Debug.log('Additional land added: ' + JSON.stringify(farmData));
+            } catch (error) {
+                Toast.show('Failed to add land: ' + error, 'error');
+                Debug.log('Add land error: ' + error);
             }
         },
         async updateContract() {
@@ -387,7 +415,7 @@
                 farmData.currentYear++;
                 farmData.contractRate = newRate;
                 await DB.setFarmData(farmData);
-                await this.addPaymentRecord(farmData.currentYear, newRate, farmData.farmSize);
+                await this.addPaymentRecord(farmData);
                 this.updateDisplay();
                 document.getElementById('newContractRate').value = '';
                 Toast.show('Contract updated successfully');
@@ -397,12 +425,13 @@
                 Debug.log('Contract update error: ' + error);
             }
         },
-       async addPaymentRecord(year, rate, farmSize) {
-            const annualAmount = rate * farmSize;
+        async addPaymentRecord(farmData) {
+            const acres = farmData.farmSize / 8;
+            const annualAmount = farmData.contractRate * acres;
             const record = {
-                year,
-                contractRate: rate,
-                annualAmount,
+                year: farmData.currentYear,
+                contractRate: farmData.contractRate,
+                annualAmount: annualAmount,
                 mayPayment: annualAmount / 2,
                 novemberPayment: annualAmount / 2
             };
